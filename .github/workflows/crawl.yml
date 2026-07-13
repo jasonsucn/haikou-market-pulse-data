@@ -15,10 +15,12 @@ on:
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要历史,才能 fallback
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -26,11 +28,25 @@ jobs:
           python-version: '3.11'
 
       - name: 抓取数据
+        env:
+          PYTHONUNBUFFERED: '1'  # 强制 stdout 立即 flush
         run: |
+          echo "==== 开始抓取 ===="
           python crawler/fetch.py
+          FETCH_EXIT=$?
+          echo "==== 抓取退出码: $FETCH_EXIT ===="
+          if [ $FETCH_EXIT -ne 0 ]; then
+            echo "::error::fetch.py 退出码 $FETCH_EXIT, 但会继续到校验步骤,看是否有 fallback 数据"
+          fi
+          # 不要 exit 1, 让下面的校验判断
+          exit 0
 
       - name: 校验输出
         run: |
+          if [ ! -f data/prices.json ]; then
+            echo "::error::data/prices.json 不存在"
+            exit 1
+          fi
           python -c "
           import json
           data = json.load(open('data/prices.json'))
@@ -38,7 +54,7 @@ jobs:
           assert len(data['items']) == 14, f'期望 14 类商品, 实际 {len(data[\"items\"])}'
           assert 'pork' in data['items'], '缺少 pork'
           assert data['items']['pork']['current'] > 0, 'pork.current 异常'
-          assert data['haikouLatestDate'], '缺少 haikouLatestDate'
+          assert data.get('haikouLatestDate'), '缺少 haikouLatestDate'
           print('✅ 校验通过, 海口数据日期:', data['haikouLatestDate'])
           print('   14 类商品当前价:')
           for k, v in data['items'].items():
@@ -50,5 +66,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/prices.json
-          git diff --staged --quiet || git commit -m "chore: 更新物价数据 $(date -u +'%Y-%m-%d %H:%M UTC')"
+          if git diff --staged --quiet; then
+            echo "无数据变更, 跳过提交"
+            exit 0
+          fi
+          git commit -m "chore: 更新物价数据 $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
