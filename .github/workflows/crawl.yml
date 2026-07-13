@@ -1,0 +1,54 @@
+name: 抓取海口物价数据
+
+on:
+  # 每天北京时间早上 8 点跑一次 (UTC 0:00)
+  schedule:
+    - cron: '0 0 * * *'
+  # 允许手动触发(调试用)
+  workflow_dispatch:
+  # push 时也跑(测试)
+  push:
+    paths:
+      - 'crawler/**'
+      - '.github/workflows/crawl.yml'
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 抓取数据
+        run: |
+          python crawler/fetch.py
+
+      - name: 校验输出
+        run: |
+          python -c "
+          import json
+          data = json.load(open('data/prices.json'))
+          assert 'items' in data, '缺少 items'
+          assert len(data['items']) == 14, f'期望 14 类商品, 实际 {len(data[\"items\"])}'
+          assert 'pork' in data['items'], '缺少 pork'
+          assert data['items']['pork']['current'] > 0, 'pork.current 异常'
+          assert data['haikouLatestDate'], '缺少 haikouLatestDate'
+          print('✅ 校验通过, 海口数据日期:', data['haikouLatestDate'])
+          print('   14 类商品当前价:')
+          for k, v in data['items'].items():
+              print(f'   {k:8s} {v[\"current\"]}')
+          "
+
+      - name: 提交并推送
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/prices.json
+          git diff --staged --quiet || git commit -m "chore: 更新物价数据 $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
