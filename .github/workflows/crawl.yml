@@ -2,15 +2,15 @@ name: 抓取海口物价数据
 
 on:
   # 每天北京时间早上 8 点跑一次 (UTC 0:00)
-  schedule:
-    - cron: '0 0 * * *'
+#  schedule:
+ #   - cron: '0 0 * * *'
   # 允许手动触发(调试用)
-  workflow_dispatch:
+ # workflow_dispatch:
   # push 时也跑(测试)
-  push:
-    paths:
-      - 'crawler/**'
-      - '.github/workflows/crawl.yml'
+ # push:
+ #   paths:
+  #    - 'crawler/**'
+   #   - '.github/workflows/crawl.yml'
 
 jobs:
   crawl:
